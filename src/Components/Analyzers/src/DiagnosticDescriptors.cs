@@ -138,4 +138,13 @@ internal static class DiagnosticDescriptors
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: CreateLocalizableResourceString(nameof(Resources.ForLoopIteratorVariableUsedInClosure_Description)));
+
+    public static readonly DiagnosticDescriptor JSInteropCallNotWrapped = new(
+        "BL0015",
+        CreateLocalizableResourceString(nameof(Resources.JSInteropCallNotWrapped_Title)),
+        CreateLocalizableResourceString(nameof(Resources.JSInteropCallNotWrapped_Format)),
+        Usage,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: CreateLocalizableResourceString(nameof(Resources.JSInteropCallNotWrapped_Description)));
 }

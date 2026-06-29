@@ -249,4 +249,13 @@
   <data name="ForLoopIteratorVariableUsedInClosure_Title" xml:space="preserve">
     <value>For loop iterator used inside a closure.</value>
   </data>
+  <data name="JSInteropCallNotWrapped_Title" xml:space="preserve">
+    <value>JSInterop invocation should be wrapped in try-catch</value>
+  </data>
+  <data name="JSInteropCallNotWrapped_Format" xml:space="preserve">
+    <value>JSInterop invocation '{0}' is not wrapped in a try-catch block</value>
+  </data>
+  <data name="JSInteropCallNotWrapped_Description" xml:space="preserve">
+    <value>JSInterop invocations may fail during prerendering, disconnections, or runtime errors and should be wrapped in try-catch.</value>
+  </data>
 </root>
