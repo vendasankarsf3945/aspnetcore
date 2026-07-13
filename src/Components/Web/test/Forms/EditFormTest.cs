@@ -205,6 +205,101 @@ public class EditFormTest
     }
 
     [Fact]
+    public async Task RendersFormWithGetMethod()
+    {
+        var editContext = new EditContext(new object());
+        var rootComponent = new TestEditFormHostComponent
+        {
+            FormName = "my-form",
+            MappingContextName = "mapping-context-name",
+            EditContext = editContext,
+            AdditionalFormAttributes = new Dictionary<string, object> { ["method"] = "get" },
+        };
+
+        await RenderAndGetTestEditFormComponentAsync(rootComponent);
+        var editFormComponentId = _testRenderer.Batches.Single()
+            .GetComponentFrames<EditForm>().Single().ComponentId;
+        var editFormFrames = _testRenderer.GetCurrentRenderTreeFrames(editFormComponentId);
+        var editFormAttributes = editFormFrames.AsEnumerable()
+            .SkipWhile(f => f.FrameType != RenderTreeFrameType.Attribute)
+            .TakeWhile(f => f.FrameType == RenderTreeFrameType.Attribute)
+            .ToDictionary(f => f.AttributeName, f => f.AttributeValue);
+
+        Assert.Equal("get", editFormAttributes["method"]);
+    }
+
+    [Fact]
+    public async Task GetMethodFormDoesNotIncludeAntiforgeryToken()
+    {
+        var editContext = new EditContext(new object());
+        var rootComponent = new TestEditFormHostComponent
+        {
+            FormName = "my-form",
+            MappingContextName = "mapping-context-name",
+            EditContext = editContext,
+            AdditionalFormAttributes = new Dictionary<string, object> { ["method"] = "get" },
+        };
+
+        await RenderAndGetTestEditFormComponentAsync(rootComponent);
+        var editFormComponentId = _testRenderer.Batches.Single()
+            .GetComponentFrames<EditForm>().Single().ComponentId;
+        var editFormFrames = _testRenderer.GetCurrentRenderTreeFrames(editFormComponentId);
+
+        // for GET-based forms because antiforgery tokens can't be in a URL.
+        var hasAntiforgeryToken = editFormFrames.AsEnumerable().Any(f =>
+            f.FrameType == RenderTreeFrameType.Component && f.Component is AntiforgeryToken);
+        Assert.False(hasAntiforgeryToken);
+    }
+
+    [Fact]
+    public async Task PostMethodFormStillIncludesAntiforgeryToken()
+    {
+        var editContext = new EditContext(new object());
+        var rootComponent = new TestEditFormHostComponent
+        {
+            FormName = "my-form",
+            MappingContextName = "mapping-context-name",
+            EditContext = editContext,
+            AdditionalFormAttributes = new Dictionary<string, object> { ["method"] = "post" },
+        };
+
+        await RenderAndGetTestEditFormComponentAsync(rootComponent);
+        var editFormComponentId = _testRenderer.Batches.Single()
+            .GetComponentFrames<EditForm>().Single().ComponentId;
+        var editFormFrames = _testRenderer.GetCurrentRenderTreeFrames(editFormComponentId);
+
+        // The AntiforgeryToken component should still be rendered for POST forms.
+        var hasAntiforgeryToken = editFormFrames.AsEnumerable().Any(f =>
+            f.FrameType == RenderTreeFrameType.Component && f.Component is AntiforgeryToken);
+        Assert.True(hasAntiforgeryToken);
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("Get")]
+    [InlineData("get")]
+    public async Task GetMethodIsCaseInsensitive(string method)
+    {
+        var editContext = new EditContext(new object());
+        var rootComponent = new TestEditFormHostComponent
+        {
+            FormName = "my-form",
+            MappingContextName = "mapping-context-name",
+            EditContext = editContext,
+            AdditionalFormAttributes = new Dictionary<string, object> { ["method"] = method },
+        };
+
+        await RenderAndGetTestEditFormComponentAsync(rootComponent);
+        var editFormComponentId = _testRenderer.Batches.Single()
+            .GetComponentFrames<EditForm>().Single().ComponentId;
+        var editFormFrames = _testRenderer.GetCurrentRenderTreeFrames(editFormComponentId);
+
+        var hasAntiforgeryToken = editFormFrames.AsEnumerable().Any(f =>
+            f.FrameType == RenderTreeFrameType.Component && f.Component is AntiforgeryToken);
+        Assert.False(hasAntiforgeryToken);
+    }
+
+    [Fact]
     public async Task Submit_AwaitsAsyncValidationBeforeOnValidSubmit()
     {
         var editContext = new EditContext(new TestModel());

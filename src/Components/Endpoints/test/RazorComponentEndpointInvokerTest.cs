@@ -162,6 +162,92 @@ public class RazorComponentEndpointInvokerTest
         Assert.DoesNotContain("antiforgery token", await ReadBody(context), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Invoker_HandlesGetBasedFormSubmission()
+    {
+        var services = new ServiceCollection().AddRazorComponents()
+                        .Services.AddAntiforgery()
+                        .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+                        .AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment())
+                        .BuildServiceProvider();
+
+        var invoker = new RazorComponentEndpointInvoker(
+            new EndpointHtmlRenderer(services, NullLoggerFactory.Instance),
+            NullLogger<RazorComponentEndpointInvoker>.Instance);
+
+        // Simulate a GET request with a _handler query parameter and some form values in the query string
+        var context = new DefaultHttpContext();
+        context.SetEndpoint(new RouteEndpoint(
+            ctx => Task.CompletedTask,
+            RoutePatternFactory.Parse("/"),
+            0,
+            new EndpointMetadataCollection(
+                new ComponentTypeMetadata(typeof(SimpleComponent)),
+                new RootComponentMetadata(typeof(SimpleComponent)),
+                new ConfiguredRenderModesMetadata(Array.Empty<IComponentRenderMode>())),
+            "test"));
+        context.Request.Method = "GET";
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("localhost");
+        context.Request.Path = "/";
+        context.Request.QueryString = new QueryString("?_handler=my-handler&FirstName=John&LastName=Doe");
+        context.Response.Body = new MemoryStream();
+        context.RequestServices = services;
+
+        await invoker.Render(context);
+
+        // The form data provider should have been set up with the query string data,
+        // even though the GET request will not match any named submit event in the SimpleComponent
+        // (so we don't assert on the response status code; it may be 400 since the handler won't be found).
+        var formDataProvider = context.RequestServices.GetRequiredService<HttpContextFormDataProvider>();
+        Assert.True(formDataProvider.TryGetIncomingHandlerName(out var handlerName));
+        Assert.Equal("my-handler", handlerName);
+        Assert.Equal("John", formDataProvider.Entries["FirstName"]);
+        Assert.Equal("Doe", formDataProvider.Entries["LastName"]);
+        // GET-based forms have no uploaded files.
+        Assert.Empty(formDataProvider.FormFiles);
+    }
+
+    [Fact]
+    public async Task Invoker_GetRequestWithoutHandlerIsNormalRequest()
+    {
+        var services = new ServiceCollection().AddRazorComponents()
+                        .Services.AddAntiforgery()
+                        .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+                        .AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment())
+                        .BuildServiceProvider();
+
+        var invoker = new RazorComponentEndpointInvoker(
+            new EndpointHtmlRenderer(services, NullLoggerFactory.Instance),
+            NullLogger<RazorComponentEndpointInvoker>.Instance);
+
+        // Simulate a normal GET request without a _handler parameter
+        var context = new DefaultHttpContext();
+        context.SetEndpoint(new RouteEndpoint(
+            ctx => Task.CompletedTask,
+            RoutePatternFactory.Parse("/"),
+            0,
+            new EndpointMetadataCollection(
+                new ComponentTypeMetadata(typeof(SimpleComponent)),
+                new RootComponentMetadata(typeof(SimpleComponent)),
+                new ConfiguredRenderModesMetadata(Array.Empty<IComponentRenderMode>())),
+            "test"));
+        context.Request.Method = "GET";
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("localhost");
+        context.Request.Path = "/";
+        context.Request.QueryString = new QueryString("?FirstName=John");
+        context.Response.Body = new MemoryStream();
+        context.RequestServices = services;
+
+        await invoker.Render(context);
+
+        // Without _handler, the form data provider should not be set up.
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var formDataProvider = context.RequestServices.GetRequiredService<HttpContextFormDataProvider>();
+        Assert.False(formDataProvider.TryGetIncomingHandlerName(out _));
+    }
+
     private static async Task<string> ReadBody(HttpContext context)
     {
         context.Response.Body.Position = 0;

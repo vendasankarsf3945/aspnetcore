@@ -13,18 +13,26 @@ internal sealed class HttpContextFormDataProvider
     private string? _incomingHandlerName;
     private IReadOnlyDictionary<string, StringValues>? _entries;
     private IFormFileCollection? _formFiles;
+    private static readonly IFormFileCollection EmptyFiles = new FormFileCollection();
 
     public string? IncomingHandlerName => _incomingHandlerName;
 
     public IReadOnlyDictionary<string, StringValues> Entries => _entries ?? ReadOnlyDictionary<string, StringValues>.Empty;
 
-    public IFormFileCollection FormFiles => _formFiles ?? (IFormFileCollection)FormCollection.Empty;
+    public IFormFileCollection FormFiles => _formFiles ?? EmptyFiles;
 
     public void SetFormData(string incomingHandlerName, IReadOnlyDictionary<string, StringValues> form, IFormFileCollection formFiles)
     {
         _incomingHandlerName = incomingHandlerName;
         _entries = form;
         _formFiles = formFiles;
+    }
+
+    public void SetQueryData(string incomingHandlerName, IReadOnlyDictionary<string, StringValues> query)
+    {
+        _incomingHandlerName = incomingHandlerName;
+        _entries = query;
+        _formFiles = EmptyFiles;
     }
 
     public bool TryGetIncomingHandlerName([NotNullWhen(true)] out string? incomingHandlerName)

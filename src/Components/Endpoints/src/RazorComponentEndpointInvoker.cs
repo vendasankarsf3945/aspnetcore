@@ -78,11 +78,23 @@ internal partial class RazorComponentEndpointInvoker : IRazorComponentEndpointIn
             _activityLinkStore.SetActivityContext(ComponentsActivityLinkStore.Http, httpActivityContext, null);
         }
 
-        await _renderer.InitializeStandardComponentServicesAsync(
-            context,
-            componentType: pageComponent,
-            handler: result.HandlerName,
-            form: result.HandlerName != null && context.Request.HasFormContentType ? await context.Request.ReadFormAsync() : null);
+        // For GET-based forms, we use query string data instead of form data.
+        if (result.IsGet && result.HandlerName is not null)
+        {
+            await _renderer.InitializeGetBasedFormDataAsync(
+                context,
+                componentType: pageComponent,
+                handler: result.HandlerName,
+                query: context.Request.Query);
+        }
+        else
+        {
+            await _renderer.InitializeStandardComponentServicesAsync(
+                context,
+                componentType: pageComponent,
+                handler: result.HandlerName,
+                form: result.HandlerName != null && context.Request.HasFormContentType ? await context.Request.ReadFormAsync() : null);
+        }
 
         // Matches MVC's MemoryPoolHttpResponseStreamWriterFactory.DefaultBufferSize
         var defaultBufferSize = 16 * 1024;
@@ -249,7 +261,18 @@ internal partial class RazorComponentEndpointInvoker : IRazorComponentEndpointIn
             await context.Request.ReadFormAsync();
 
             var handler = GetFormHandler(context, out var isBadRequest);
-            return new(!isBadRequest, processPost, handler);
+            return new(!isBadRequest, processPost, isGet: false, handler);
+        }
+
+        // Check for a GET-based form submission. We treat it as a form post if the request includes
+        // a _handler query string parameter that identifies the form being submitted.
+        if (HttpMethods.IsGet(context.Request.Method))
+        {
+            var handler = GetFormHandlerFromQuery(context, out var isBadRequest);
+            if (handler is not null)
+            {
+                return new RequestValidationState(!isBadRequest, isPost: true, isGet: true, handler);
+            }
         }
 
         return RequestValidationState.ValidNonPostRequest;
@@ -273,21 +296,41 @@ internal partial class RazorComponentEndpointInvoker : IRazorComponentEndpointIn
         return null;
     }
 
-    [DebuggerDisplay($"{{{nameof(GetDebuggerDisplay)}(),nq}}")]
-    private readonly struct RequestValidationState(bool isValid, bool isPost, string? handlerName)
+    private static string? GetFormHandlerFromQuery(HttpContext context, out bool isBadRequest)
     {
-        public static readonly RequestValidationState ValidNonPostRequest = new(true, false, null);
-        public static readonly RequestValidationState InvalidPostRequest = new(false, true, null);
+        isBadRequest = false;
+        if (context.Request.Query.TryGetValue("_handler", out var value))
+        {
+            if (value.Count != 1)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                isBadRequest = true;
+            }
+            else
+            {
+                return value[0]!;
+            }
+        }
+        return null;
+    }
+
+    [DebuggerDisplay($"{{{nameof(GetDebuggerDisplay)}(),nq}}")]
+    private readonly struct RequestValidationState(bool isValid, bool isPost, bool isGet, string? handlerName)
+    {
+        public static readonly RequestValidationState ValidNonPostRequest = new(true, false, false, null);
+        public static readonly RequestValidationState InvalidPostRequest = new(false, true, false, null);
 
         public bool IsValid => isValid;
 
         public bool IsPost => isPost;
 
+        public bool IsGet => isGet;
+
         public string? HandlerName => handlerName;
 
         private string GetDebuggerDisplay()
         {
-            return $"IsValid = {IsValid}, IsPost = {IsPost}, HandlerName = {HandlerName}";
+            return $"IsValid = {IsValid}, IsPost = {IsPost}, IsGet = {IsGet}, HandlerName = {HandlerName}";
         }
     }
 

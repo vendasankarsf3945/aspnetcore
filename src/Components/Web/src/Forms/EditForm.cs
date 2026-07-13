@@ -141,7 +141,10 @@ public class EditForm : ComponentBase
 
         if (MappingContext != null)
         {
-            builder.AddAttribute(2, "method", "post");
+            if (!HasAttribute(AdditionalAttributes, "method"))
+            {
+                builder.AddAttribute(2, "method", "post");
+            }
         }
 
         if (Enhance)
@@ -183,10 +186,45 @@ public class EditForm : ComponentBase
         builder.AddComponentParameter(2, nameof(FormMappingValidator.CurrentEditContext), EditContext);
         builder.CloseComponent();
 
-        builder.OpenComponent<AntiforgeryToken>(3);
-        builder.CloseComponent();
+        // For GET-based forms, antiforgery tokens are not used. The data is included in the
+        // URL query string and we can't put the antiforgery token in a URL because it would be
+        // logged in web server access logs and may be cached by browsers/intermediaries.
+        if (!IsGetMethod)
+        {
+            builder.OpenComponent<AntiforgeryToken>(3);
+            builder.CloseComponent();
+        }
 
         builder.CloseRegion();
+    }
+
+    private bool IsGetMethod
+    {
+        get
+        {
+            return AdditionalAttributes is not null &&
+                AdditionalAttributes.TryGetValue("method", out var value) &&
+                value is string methodString &&
+                string.Equals(methodString, "get", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static bool HasAttribute(IReadOnlyDictionary<string, object>? attributes, string name)
+    {
+        if (attributes is null)
+        {
+            return false;
+        }
+
+        foreach (var key in attributes.Keys)
+        {
+            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task HandleSubmitAsync()

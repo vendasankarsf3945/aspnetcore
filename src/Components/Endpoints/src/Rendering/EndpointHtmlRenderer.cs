@@ -86,6 +86,37 @@ internal partial class EndpointHtmlRenderer : StaticHtmlRenderer, IComponentPrer
         string? handler = null,
         IFormCollection? form = null)
     {
+        await InitializeCoreServicesAsync(httpContext, componentType);
+
+        if (handler != null && form != null)
+        {
+            httpContext.RequestServices.GetRequiredService<HttpContextFormDataProvider>()
+                .SetFormData(handler, new FormCollectionReadOnlyDictionary(form), form.Files);
+        }
+    }
+
+    // For GET-based form posts, we initialize the same component services as a standard request,
+    // but the form values come from the URL query string instead of the request body. There is no
+    // antiforgery token validation for GET requests.
+    internal async Task InitializeGetBasedFormDataAsync(
+        HttpContext httpContext,
+        [DynamicallyAccessedMembers(Component)] Type? componentType,
+        string handler,
+        IQueryCollection query)
+    {
+        await InitializeCoreServicesAsync(httpContext, componentType);
+
+        if (handler is not null)
+        {
+            httpContext.RequestServices.GetRequiredService<HttpContextFormDataProvider>()
+                .SetQueryData(handler, new QueryCollectionReadOnlyDictionary(query));
+        }
+    }
+
+    private async Task InitializeCoreServicesAsync(
+        HttpContext httpContext,
+        [DynamicallyAccessedMembers(Component)] Type? componentType)
+    {
         var navigationManager = httpContext.RequestServices.GetRequiredService<NavigationManager>();
         ((IHostEnvironmentNavigationManager)navigationManager)?.Initialize(
             GetContextBaseUri(httpContext.Request),
@@ -113,12 +144,6 @@ internal partial class EndpointHtmlRenderer : StaticHtmlRenderer, IComponentPrer
         }
 
         InitializeResourceCollection(httpContext);
-
-        if (handler != null && form != null)
-        {
-            httpContext.RequestServices.GetRequiredService<HttpContextFormDataProvider>()
-                .SetFormData(handler, new FormCollectionReadOnlyDictionary(form), form.Files);
-        }
 
         if (httpContext.RequestServices.GetService<AntiforgeryStateProvider>() is EndpointAntiforgeryStateProvider antiforgery)
         {
@@ -308,6 +333,53 @@ internal partial class EndpointHtmlRenderer : StaticHtmlRenderer, IComponentPrer
         IEnumerator IEnumerable.GetEnumerator()
         {
             return _form.GetEnumerator();
+        }
+    }
+
+    private sealed class QueryCollectionReadOnlyDictionary : IReadOnlyDictionary<string, StringValues>
+    {
+        private readonly IQueryCollection _query;
+
+        public QueryCollectionReadOnlyDictionary(IQueryCollection query)
+        {
+            _query = query;
+        }
+
+        public StringValues this[string key] => _query[key];
+
+        public IEnumerable<string> Keys => _query.Keys;
+
+        public IEnumerable<StringValues> Values
+        {
+            get
+            {
+                foreach (var key in _query.Keys)
+                {
+                    yield return _query[key];
+                }
+            }
+        }
+
+        public int Count => _query.Count;
+
+        public bool ContainsKey(string key)
+        {
+            return _query.ContainsKey(key);
+        }
+
+        public IEnumerator<KeyValuePair<string, StringValues>> GetEnumerator()
+        {
+            return _query.GetEnumerator();
+        }
+
+        public bool TryGetValue(string key, [MaybeNullWhen(false)] out StringValues value)
+        {
+            return _query.TryGetValue(key, out value);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return _query.GetEnumerator();
         }
     }
 }

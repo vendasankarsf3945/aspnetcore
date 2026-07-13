@@ -42,4 +42,36 @@ public class HttpContextFormValueMapperTest
         var canMap = mapper.CanMap(typeof(string), scopeName, formNameOrNull);
         Assert.Equal(expectedResult, canMap);
     }
+
+    [Fact]
+    public void CanMap_MatchesOnScopeAndFormName_WithQueryData()
+    {
+        var formData = new HttpContextFormDataProvider();
+        formData.SetQueryData("some-form", new Dictionary<string, StringValues>());
+
+        var mapper = new HttpContextFormValueMapper(formData, Options.Create<RazorComponentsServiceOptions>(new()));
+
+        Assert.True(mapper.CanMap(typeof(string), "", null));
+        Assert.True(mapper.CanMap(typeof(string), "", "some-form"));
+        Assert.False(mapper.CanMap(typeof(string), "", "other-form"));
+        Assert.False(mapper.CanMap(typeof(string), "x", "some-form"));
+    }
+
+    [Fact]
+    public void Entries_ReturnsQueryDataWhenSetViaQuery()
+    {
+        var formData = new HttpContextFormDataProvider();
+        var query = new Dictionary<string, StringValues>
+        {
+            { "FirstName", new StringValues("John") },
+            { "LastName", new StringValues("Doe") },
+        };
+        formData.SetQueryData("test-form", query);
+
+        var entries = formData.Entries;
+
+        Assert.Equal(2, entries.Count);
+        Assert.Equal("John", entries["FirstName"]);
+        Assert.Equal("Doe", entries["LastName"]);
+    }
 }
