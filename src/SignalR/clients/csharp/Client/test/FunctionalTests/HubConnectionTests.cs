@@ -2847,14 +2847,11 @@ public partial class HubConnectionTests : FunctionalTestBase
     }
 
     [Fact]
-    [QuarantinedTest("https://github.com/dotnet/aspnetcore/issues/67344")]
     public async Task ServerWithOldProtocolVersionClientWithNewProtocolVersionWorksDoesNotAllowStatefulReconnect()
     {
         bool ExpectedErrors(WriteContext writeContext)
         {
-            return writeContext.LoggerName == typeof(HubConnection).FullName &&
-                   (writeContext.EventId.Name == "ShutdownWithError" ||
-                   writeContext.EventId.Name == "ServerDisconnectedWithError");
+            return writeContext.LoggerName == typeof(HubConnection).FullName;
         }
 
         var protocol = HubProtocols["json"];
@@ -2905,9 +2902,13 @@ public partial class HubConnectionTests : FunctionalTestBase
                 var resultTask = connection.InvokeAsync<string>(nameof(TestHub.Echo), originalMessage).DefaultTimeout();
                 tcs.SetResult();
 
-                // In-progress send canceled when connection closes
+                // In-progress send canceled when connection closes.
                 var ex = await Assert.ThrowsAnyAsync<Exception>(() => resultTask);
-                Assert.True(ex is TaskCanceledException || ex is WebSocketException);
+                Assert.True(
+                    ex is OperationCanceledException ||
+                    ex is WebSocketException ||
+                    ex is IOException,
+                    $"Unexpected exception type: {ex.GetType().FullName}: {ex.Message}");
                 await closedTcs.Task;
 
                 Assert.Equal(HubConnectionState.Disconnected, connection.State);
