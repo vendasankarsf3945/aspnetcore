@@ -852,7 +852,17 @@ internal sealed class Http3Connection : IHttp3StreamLifetimeHandler, IRequestPro
 
                 if (_activeRequestCount == 0)
                 {
-                    TimeoutControl.SetTimeout(Limits.KeepAliveTimeout, TimeoutReason.KeepAlive);
+                    if (_gracefulCloseInitiator != GracefulCloseInitiator.None)
+                    {
+                        // All active requests have completed during graceful shutdown. Wake up the
+                        // accept loop by cancelling its CTS so it can call TryStopAcceptingStreams()
+                        // and exit cleanly without waiting for the host shutdown timeout.
+                        _acceptStreamsCts.Cancel();
+                    }
+                    else
+                    {
+                        TimeoutControl.SetTimeout(Limits.KeepAliveTimeout, TimeoutReason.KeepAlive);
+                    }
                 }
             }
             _streams.Remove(stream.StreamId);
