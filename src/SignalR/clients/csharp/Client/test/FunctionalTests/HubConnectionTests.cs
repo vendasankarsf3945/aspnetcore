@@ -2851,7 +2851,10 @@ public partial class HubConnectionTests : FunctionalTestBase
     {
         bool ExpectedErrors(WriteContext writeContext)
         {
-            return writeContext.LoggerName == typeof(HubConnection).FullName;
+            return writeContext.LoggerName == typeof(HubConnection).FullName &&
+                   (writeContext.EventId.Name == "ShutdownWithError" ||
+                   writeContext.EventId.Name == "ServerDisconnectedWithError" ||
+                   writeContext.EventId.Name == "FailedToSendInvocation");
         }
 
         var protocol = HubProtocols["json"];
