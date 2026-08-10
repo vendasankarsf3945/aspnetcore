@@ -94,7 +94,14 @@ public class BrowserTestBase : IClassFixture<BrowserFixture>, IAsyncLifetime
 
             if (!_originalWindowSize.HasValue)
             {
-                _originalWindowSize = browser.Manage().Window.Size;
+                try
+                {
+                    _originalWindowSize = browser.Manage().Window.Size;
+                }
+                catch (WebDriverException)
+                {
+                    // if the window size can't be retrieved, skip restoring it on cleanup.
+                }
             }
 
             Browser = browser;

@@ -55,7 +55,6 @@ public class RedirectionTest : ServerTestBase<BasicTestAppServerSiteFixture<Razo
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    [QuarantinedTest("https://github.com/dotnet/aspnetcore/issues/66969")]
     public void RedirectStreamingGetToExternal(bool disableThrowNavigationException)
     {
         AppContext.SetSwitch("Microsoft.AspNetCore.Components.Endpoints.NavigationManager.DisableThrowNavigationException", disableThrowNavigationException);
@@ -177,7 +176,6 @@ public class RedirectionTest : ServerTestBase<BasicTestAppServerSiteFixture<Razo
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    [QuarantinedTest("https://github.com/dotnet/aspnetcore/issues/66969")]
     public void RedirectStreamingEnhancedGetToExternal(bool disableThrowNavigationException)
     {
         AppContext.SetSwitch("Microsoft.AspNetCore.Components.Endpoints.NavigationManager.DisableThrowNavigationException", disableThrowNavigationException);
@@ -185,7 +183,6 @@ public class RedirectionTest : ServerTestBase<BasicTestAppServerSiteFixture<Razo
         Browser.Exists(By.LinkText("Streaming enhanced GET with external redirection")).Click();
         Browser.Contains("microsoft.com", () => Browser.Url);
     }
-    
 
     [Theory]
     [InlineData(true)]
