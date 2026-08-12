@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices.JavaScript;
 using Microsoft.AspNetCore.Components.Web;
@@ -17,12 +18,16 @@ internal partial class InternalJSImportMethods : IInternalJSImportMethods
     public string GetPersistedState()
         => GetPersistedStateCore();
 
+    // The framework uses GetInitialComponentUpdateJsonAsync instead; this overload skips lazy-assembly pre-loading.
+    [EditorBrowsable(EditorBrowsableState.Never)]
     [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "These are root components which belong to the user and are in assemblies that don't get trimmed.")]
     public static async Task<RootComponentOperationBatch> GetInitialComponentUpdate()
     {
         var components = await GetInitialUpdateCore();
         return DefaultWebAssemblyJSRuntime.DeserializeOperations(components);
     }
+
+    internal static Task<string> GetInitialComponentUpdateJsonAsync() => GetInitialUpdateCore();
 
     public string GetApplicationEnvironment()
         => GetApplicationEnvironmentCore();

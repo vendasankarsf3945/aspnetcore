@@ -118,9 +118,16 @@ internal sealed partial class DefaultWebAssemblyJSRuntime : WebAssemblyJSRuntime
             operationsJson,
             WebAssemblyJsonSerializerContext.Default.RootComponentOperationBatch)!;
 
-        for (var i = 0; i < deserialized.Operations.Length; i++)
+        return ResolveOperationDescriptors(deserialized);
+    }
+
+    // Resolves component types for all non-Remove operations in a pre-parsed batch.
+    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "Root components are in assemblies that don't get trimmed.")]
+    internal static RootComponentOperationBatch ResolveOperationDescriptors(RootComponentOperationBatch batch)
+    {
+        for (var i = 0; i < batch.Operations.Length; i++)
         {
-            var operation = deserialized.Operations[i];
+            var operation = batch.Operations[i];
             if (operation.Type == RootComponentOperationType.Remove)
             {
                 continue;
@@ -137,7 +144,7 @@ internal sealed partial class DefaultWebAssemblyJSRuntime : WebAssemblyJSRuntime
             operation.Descriptor = new(componentType, parameters);
         }
 
-        return deserialized;
+        return batch;
     }
 
     static WebRootComponentParameters DeserializeComponentParameters(ComponentMarker marker)

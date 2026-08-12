@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
+using System.Text.Json;
 using Microsoft.AspNetCore.Components.Infrastructure;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.Infrastructure;
@@ -25,6 +27,7 @@ public sealed class WebAssemblyHost : IAsyncDisposable
     private readonly IConfiguration _configuration;
     private readonly RootComponentMappingCollection _rootComponents;
     private readonly string? _persistedState;
+    private readonly WebAssemblyHostBuilder _builder;
 
     // NOTE: the host is disposable because it OWNs references to disposable things.
     //
@@ -49,6 +52,7 @@ public sealed class WebAssemblyHost : IAsyncDisposable
         // To ensure JS-invoked methods don't get linked out, have a reference to their enclosing types
         GC.KeepAlive(typeof(JSInteropMethods));
 
+        _builder = builder;
         _services = services;
         _scope = scope;
         _configuration = builder.Configuration;
@@ -173,6 +177,10 @@ public sealed class WebAssemblyHost : IAsyncDisposable
 
             WebAssemblyNavigationManager.Instance.CreateLogger(loggerFactory);
 
+            // Resolve any root components whose assemblies were marked as lazy-loaded and not yet
+            // downloaded at startup time. This must happen before the first render.
+            await _builder.ResolveDeferredRootComponentsAsync(Services);
+
             RootComponentOperationBatch? initialOperationBatch = null;
             if (Environment.GetEnvironmentVariable("__BLAZOR_WEBASSEMBLY_WAIT_FOR_ROOT_COMPONENTS") == "true")
             {
@@ -182,7 +190,7 @@ public sealed class WebAssemblyHost : IAsyncDisposable
                 // We do it this way to ensure that the persistent component state is only used the first time
                 // the wasm runtime is initialized and is done in the same way for both webassembly and blazor
                 // web.
-                initialOperationBatch = await InternalJSImportMethods.GetInitialComponentUpdate();
+                initialOperationBatch = await GetAndPreloadInitialComponentBatchAsync();
             }
 
             var initializationTcs = new TaskCompletionSource();
@@ -226,6 +234,28 @@ public sealed class WebAssemblyHost : IAsyncDisposable
 
             await tcs.Task;
         }
+    }
+
+    // Gets the initial Blazor Web component batch, pre-loading any lazy assemblies it references.
+    private async Task<RootComponentOperationBatch> GetAndPreloadInitialComponentBatchAsync()
+    {
+        var json = await InternalJSImportMethods.GetInitialComponentUpdateJsonAsync();
+        var batch = JsonSerializer.Deserialize(
+            json,
+            WebAssemblyJsonSerializerContext.Default.RootComponentOperationBatch)!;
+        await PreloadLazyAssembliesForBatchAsync(batch);
+        return DefaultWebAssemblyJSRuntime.ResolveOperationDescriptors(batch);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Lazy-loaded assemblies are not expected to be trimmed.")]
+    private async Task PreloadLazyAssembliesForBatchAsync(RootComponentOperationBatch batch)
+    {
+        var assemblyNames = batch.Operations
+            .Where(op => op.Type != RootComponentOperationType.Remove && op.Marker?.Assembly != null)
+            .Select(op => op.Marker!.Value.Assembly!);
+
+        var loader = Services.GetRequiredService<LazyAssemblyLoader>();
+        await loader.LoadMissingAssembliesAsync(assemblyNames);
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "These are root components which belong to the user and are in assemblies that don't get trimmed.")]

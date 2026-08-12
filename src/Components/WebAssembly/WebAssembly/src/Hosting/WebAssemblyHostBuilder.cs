@@ -3,6 +3,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Infrastructure;
@@ -32,6 +33,7 @@ public sealed class WebAssemblyHostBuilder
     private RootTypeCache? _rootComponentCache;
     private string? _persistedState;
     private ServiceProviderOptions? _serviceProviderOptions;
+    private ComponentMarker[]? _deferredRegisteredComponents;
 
     [FeatureSwitchDefinition("System.Diagnostics.Metrics.Meter.IsSupported")]
     internal static bool IsMeterSupported { get; } =
@@ -160,7 +162,54 @@ public sealed class WebAssemblyHostBuilder
 
         _rootComponentCache = new RootTypeCache();
         var componentDeserializer = WebAssemblyComponentParameterDeserializer.Instance;
+        List<ComponentMarker>? deferredComponents = null;
+
         foreach (var registeredComponent in registeredComponents)
+        {
+            var componentType = _rootComponentCache.GetRootType(registeredComponent.Assembly!, registeredComponent.TypeName!);
+            if (componentType is null)
+            {
+                // The assembly may be a lazy-loaded assembly that has not been downloaded yet.
+                // Defer resolution to ResolveDeferredRootComponentsAsync, which runs before rendering.
+                deferredComponents ??= [];
+                deferredComponents.Add(registeredComponent);
+                continue;
+            }
+
+            var definitions = WebAssemblyComponentParameterDeserializer.GetParameterDefinitions(registeredComponent.ParameterDefinitions!);
+            var values = WebAssemblyComponentParameterDeserializer.GetParameterValues(registeredComponent.ParameterValues!);
+            var parameters = componentDeserializer.DeserializeParameters(definitions, values);
+
+            RootComponents.Add(componentType, registeredComponent.PrerenderId!, parameters);
+        }
+
+        if (deferredComponents is not null)
+        {
+            _deferredRegisteredComponents = [.. deferredComponents];
+        }
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "Root components are expected to be defined in assemblies that do not get trimmed.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Lazy-loaded assemblies are not expected to be trimmed.")]
+    internal async Task ResolveDeferredRootComponentsAsync(IServiceProvider services)
+    {
+        if (_deferredRegisteredComponents is null)
+        {
+            return;
+        }
+
+        var deferredComponents = _deferredRegisteredComponents;
+        _deferredRegisteredComponents = null;
+
+        var lazyAssemblyLoader = services.GetRequiredService<LazyAssemblyLoader>();
+        await lazyAssemblyLoader.LoadMissingAssembliesAsync(deferredComponents.Select(c => c.Assembly!));
+
+        // The cache stores null for assemblies that weren't loaded at startup; clear it so
+        // GetRootType re-resolves against the newly loaded assemblies.
+        _rootComponentCache!.ClearCache();
+
+        var componentDeserializer = WebAssemblyComponentParameterDeserializer.Instance;
+        foreach (var registeredComponent in deferredComponents)
         {
             var componentType = _rootComponentCache.GetRootType(registeredComponent.Assembly!, registeredComponent.TypeName!);
             if (componentType is null)

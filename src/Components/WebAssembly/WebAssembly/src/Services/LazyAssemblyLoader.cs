@@ -45,6 +45,30 @@ public sealed partial class LazyAssemblyLoader
         return LoadAssembliesInServerAsync(assembliesToLoad);
     }
 
+    /// <summary>
+    /// Internal helper that loads assemblies by simple name, filtering already-loaded ones
+    /// and appending the .dll extension. Encapsulates WASM-specific implementation details.
+    /// </summary>
+    /// <param name="assemblyNames">The simple names of the assemblies to load (without .dll extension)</param>
+    [RequiresUnreferencedCode("Types and members the loaded assemblies depend on might be removed")]
+    internal async Task LoadMissingAssembliesAsync(IEnumerable<string> assemblyNames)
+    {
+        var loadedNames = AppDomain.CurrentDomain.GetAssemblies()
+            .Select(a => a.GetName().Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var toLoad = assemblyNames
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(a => !loadedNames.Contains(a))
+            .Select(a => a + ".dll")
+            .ToList();
+
+        if (toLoad.Count > 0)
+        {
+            await LoadAssembliesAsync(toLoad);
+        }
+    }
+
     private static Task<IEnumerable<Assembly>> LoadAssembliesInServerAsync(IEnumerable<string> assembliesToLoad)
     {
         var loadedAssemblies = new List<Assembly>();
