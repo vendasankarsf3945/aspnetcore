@@ -7,6 +7,7 @@
 import * as DotNet from '../../JSInterop/Microsoft.JSInterop';
 import { attachDebuggerHotkey } from './MonoDebugger';
 import { showErrorNotification } from '../../BootErrors';
+import { createBootResourceLoaderWithCacheRecovery } from './BootResourceLoader';
 import { Platform, System_Array, Pointer, System_Object, HeapLock, PlatformApi } from '../Platform';
 import { WebAssemblyBootResourceType, WebAssemblyStartOptions } from '../WebAssemblyStartOptions';
 import { Blazor } from '../../GlobalExports';
@@ -196,9 +197,7 @@ async function createRuntimeInstance(options: Partial<WebAssemblyStartOptions>, 
     dotnet.withApplicationEnvironment(options.environment);
   }
 
-  if (options.loadBootResource) {
-    dotnet.withResourceLoader(options.loadBootResource);
-  }
+  dotnet.withResourceLoader(createBootResourceLoaderWithCacheRecovery(options.loadBootResource));
 
   const anyDotnet = (dotnet as any);
   anyDotnet.withModuleConfig(moduleConfig);
