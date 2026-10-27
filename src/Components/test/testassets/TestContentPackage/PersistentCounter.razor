@@ -1,4 +1,4 @@
-﻿@using Microsoft.JSInterop
+@using Microsoft.JSInterop
 @inject IJSRuntime JSRuntime
 
 <!-- The render changes when the component is resumed because it runs in a separate circuit -->
@@ -40,6 +40,15 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && RendererInfo.IsInteractive)
+        {
+            // Register to track circuit invocation failures for testing
+            await JSRuntime.InvokeVoidAsync("setupCircuitFailureTracking");
+        }
+    }
+
     private void IncrementCount()
     {
         State.Count = State.Count + 1;
@@ -50,3 +59,50 @@
         NonPersistedCounter = NonPersistedCounter + 1;
     }
 }
+
+<script>
+    window.setupCircuitFailureTracking = function() {
+        // Track which circuit hub method failed during reconnection/resumption
+        // The CircuitManager catches errors from ConnectCircuit and ResumeCircuit invocations
+        // We hook into the circuit handlers to detect these failures
+        if (window.Blazor && window.Blazor._internal && window.Blazor._internal.circuitManager) {
+            var circuitManager = window.Blazor._internal.circuitManager;
+            
+            // Store the original reconnect method
+            var originalReconnect = circuitManager.reconnect;
+            circuitManager.reconnect = async function() {
+                try {
+                    return await originalReconnect.call(this);
+                } catch (error) {
+                    // The server injected an error message like "Test-injected failure for ConnectCircuit invocation"
+                    if (error && error.message) {
+                        var match = error.message.match(/(ConnectCircuit|ResumeCircuit)/);
+                        if (match) {
+                            window.failedCircuitInvocation = match[1];
+                        }
+                    }
+                    throw error;
+                }
+            };
+            
+            // Also hook into resume for the ResumeCircuit failure case
+            var originalResume = circuitManager.resume;
+            if (originalResume) {
+                circuitManager.resume = async function() {
+                    try {
+                        return await originalResume.call(this);
+                    } catch (error) {
+                        // Extract the failed method name from the error message
+                        if (error && error.message) {
+                            var match = error.message.match(/(ConnectCircuit|ResumeCircuit)/);
+                            if (match) {
+                                window.failedCircuitInvocation = match[1];
+                            }
+                        }
+                        throw error;
+                    }
+                };
+            }
+        }
+    };
+</script>

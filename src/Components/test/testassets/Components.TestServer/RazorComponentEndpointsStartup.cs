@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Localization;
 using TestContentPackage;
 using TestContentPackage.Services;
@@ -133,8 +134,9 @@ public class RazorComponentEndpointsStartup<TRootComponent>
         services.AddScoped<PauseTrackingHandler>();
         services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<PauseTrackingHandler>());
 
-        services.AddScoped<CircuitInvocationFailureHandler>();
-        services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<CircuitInvocationFailureHandler>());
+        // Register hub filter for testing circuit invocation failures
+        services.AddScoped<FailingCircuitHubFilter>();
+        services.AddScoped<IHubFilter>(sp => sp.GetRequiredService<FailingCircuitHubFilter>());
 
         services.AddSingleton<AutoPauseTestStreamGate>();
     }
