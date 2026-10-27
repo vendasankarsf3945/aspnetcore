@@ -45,6 +45,51 @@
             };
         }
 
+        // Track which circuit invocation failed (for testing)
+        window.failedCircuitInvocation = null;
+        
+        // Hook into Blazor start to track circuit invocation failures
+        if (window.Blazor) {
+            const originalStart = window.Blazor.start;
+            window.Blazor.start = function(...args) {
+                // Query the failure endpoint after a small delay to allow the circuit handler to process the failed invocation
+                const checkForFailure = async () => {
+                    try {
+                        const response = await fetch('/api/circuit-invocation-failure');
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.failedMethod) {
+                                window.failedCircuitInvocation = data.failedMethod;
+                            }
+                        }
+                    } catch (e) {
+                        // Silently fail - the endpoint may not be available
+                    }
+                };
+                
+                // Check on a periodic basis
+                const intervalId = setInterval(checkForFailure, 100);
+                
+                // Also setup a hook to check when the connection is up
+                if (window.Blazor.defaultReconnectionHandler) {
+                    const originalOnConnectionUp = window.Blazor.defaultReconnectionHandler.onConnectionUp;
+                    if (originalOnConnectionUp) {
+                        window.Blazor.defaultReconnectionHandler.onConnectionUp = function() {
+                            checkForFailure();
+                            if (originalOnConnectionUp) {
+                                originalOnConnectionUp.call(this);
+                            }
+                        };
+                    }
+                }
+                
+                // Clean up interval after 10 seconds
+                setTimeout(() => clearInterval(intervalId), 10000);
+                
+                return originalStart.apply(this, args);
+            };
+        }
+
         function callBlazorStart() {
             const params = new URLSearchParams(location.search);
             const circuitOptions = {

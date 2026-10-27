@@ -133,6 +133,9 @@ public class RazorComponentEndpointsStartup<TRootComponent>
         services.AddScoped<PauseTrackingHandler>();
         services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<PauseTrackingHandler>());
 
+        services.AddScoped<CircuitInvocationFailureHandler>();
+        services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<CircuitInvocationFailureHandler>());
+
         services.AddSingleton<AutoPauseTestStreamGate>();
     }
 
@@ -392,6 +395,13 @@ public class RazorComponentEndpointsStartup<TRootComponent>
         });
 
         endpoints.Map("/test-formaction", () => "Formaction url");
+
+        // Endpoint for testing circuit invocation failures - returns which method failed
+        endpoints.MapGet("/api/circuit-invocation-failure", (HttpContext httpContext) =>
+        {
+            var failedMethod = httpContext.Items["CircuitInvocationFailureOccurred"] as string;
+            return TypedResults.Ok(new { failedMethod });
+        });
 
         static Task PerformRedirection(
             HttpRequest request,
