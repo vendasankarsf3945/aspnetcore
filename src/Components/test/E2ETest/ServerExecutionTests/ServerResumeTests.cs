@@ -35,6 +35,29 @@ public class ServerResumeTests : ServerTestBase<BasicTestAppServerSiteFixture<Ra
 
     public bool UseShadowRoot { get; set; } = true;
 
+    [Theory]
+    [InlineData("ConnectCircuit")]
+    [InlineData("ResumeCircuit")]
+    public void RecoversWhenCircuitInvocationFails(string hubMethod)
+    {
+        Navigate($"{TestUrl}?fail-circuit-invocation={hubMethod}");
+
+        Browser.Equal("5", () => Browser.Exists(By.Id("non-persisted-counter")).Text);
+        Browser.Exists(By.Id("increment-persistent-counter-count")).Click();
+        Browser.Equal("1", () => Browser.Exists(By.Id("persistent-counter-count")).Text);
+
+        var javascript = (IJavaScriptExecutor)Browser;
+        javascript.ExecuteScript("Blazor._internal.forceCloseConnection()");
+
+        Browser.Equal("block", () => Browser.Exists(By.Id("components-reconnect-modal")).GetCssValue("display"));
+        Browser.Equal("none", () => Browser.Exists(By.Id("components-reconnect-modal")).GetCssValue("display"));
+        Browser.Equal(hubMethod, () => javascript.ExecuteScript("return window.failedCircuitInvocation")?.ToString());
+
+        Browser.Exists(By.Id("increment-persistent-counter-count")).Click();
+        Browser.Equal("2", () => Browser.Exists(By.Id("persistent-counter-count")).Text);
+        Browser.Equal("0", () => Browser.Exists(By.Id("non-persisted-counter")).Text);
+    }
+
     [Fact]
     public void CanResumeCircuitAfterDisconnection()
     {
