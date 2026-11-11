@@ -1,0 +1,8 @@
+@page "/persistent-state/startup-navigation-slow"
+
+<InitialCircuitSlowRenderComponent TestId="TestId" @rendermode="@(new InteractiveServerRenderMode(prerender: true))" />
+
+@code {
+    [SupplyParameterFromQuery(Name = "test-id")]
+    public Guid TestId { get; set; }
+}

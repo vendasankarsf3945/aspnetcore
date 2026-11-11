@@ -1,0 +1,21 @@
+@using TestServer
+@inject AutoPauseTestStreamGate Gate
+
+<p id="startup-slow-status">@_status</p>
+
+@code {
+    private string _status = "static";
+
+    [Parameter]
+    public Guid TestId { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (RendererInfo.IsInteractive)
+        {
+            _status = "loading";
+            await Gate.WaitAsync(TestId.ToString(), CancellationToken.None);
+            _status = "interactive";
+        }
+    }
+}

@@ -31,6 +31,7 @@ internal partial class CircuitHost : IAsyncDisposable
     private CircuitHandler[] _circuitHandlers;
     private bool _initialized;
     private bool _isFirstUpdate = true;
+    private Task<bool> _rootComponentUpdateTask = Task.FromResult(true);
     private bool _onConnectionUpFired;
     private bool _onConnectionDownFired;
     private bool _disposed;
@@ -774,6 +775,12 @@ internal partial class CircuitHost : IAsyncDisposable
 
         return Renderer.Dispatcher.InvokeAsync(async () =>
         {
+            // The dispatcher can accept another batch while this one awaits initial rendering or state restoration.
+            // Keep each batch's state alive until its consumers have finished before restoring the next batch.
+            var previousUpdateTask = _rootComponentUpdateTask;
+            var updateCompletionSource = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _rootComponentUpdateTask = updateCompletionSource.Task;
+            var succeeded = false;
             var shouldClearStore = false;
             var shouldWaitForQuiescence = false;
             var operations = operationBatch.Operations;
@@ -782,6 +789,11 @@ internal partial class CircuitHost : IAsyncDisposable
             TaskCompletionSource? taskCompletionSource = null;
             try
             {
+                if (!await previousUpdateTask || _disposed)
+                {
+                    return;
+                }
+
                 if (Descriptors.Count > 0)
                 {
                     // Block updating components if they were provided during StartCircuit. This keeps
@@ -844,18 +856,17 @@ internal partial class CircuitHost : IAsyncDisposable
                 var operationsTask = PerformRootComponentOperations(operations, shouldWaitForQuiescence, postRemovalTask);
                 taskCompletionSource?.SetResult();
 
-                await operationsTask;
+                await Task.WhenAll(operationsTask.AsTask(), postRemovalTask);
 
                 await Client.SendAsync("JS.EndUpdateRootComponents", batchId);
 
                 Log.UpdateRootComponentsSucceeded(_logger);
+                succeeded = true;
             }
             catch (Exception ex)
             {
                 // Report errors asynchronously. UpdateRootComponents is designed not to throw.
-                Log.UpdateRootComponentsFailed(_logger, ex);
-                UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
-                await TryNotifyClientErrorAsync(Client, GetClientErrorMessage(ex), ex);
+                await ReportRootComponentUpdateFailureAsync(ex);
             }
             finally
             {
@@ -866,6 +877,8 @@ internal partial class CircuitHost : IAsyncDisposable
                     // reclaimed since no-one else is holding on to it any longer.
                     store.Clear();
                 }
+
+                updateCompletionSource.SetResult(succeeded);
             }
         });
     }
@@ -908,15 +921,22 @@ internal partial class CircuitHost : IAsyncDisposable
                             operation.Marker.Value.Key,
                             operation.Descriptor.Parameters);
 
-                        pendingTasks?[i] = task;
+                        if (pendingTasks is not null)
+                        {
+                            pendingTasks[i] = task;
+                        }
+                        else
+                        {
+                            _ = ObserveRootComponentOperation(task, postStateTask);
+                        }
                         break;
                     case RootComponentOperationType.Update:
-                        // We don't need to await component updates as any unhandled exception will be reported and terminate the circuit.
-                        _ = webRootComponentManager.UpdateRootComponentAsync(
+                        var updateTask = webRootComponentManager.UpdateRootComponentAsync(
                             operation.SsrComponentId,
                             operation.Descriptor.ComponentType,
                             operation.Marker.Value.Key,
                             operation.Descriptor.Parameters);
+                        _ = ObserveRootComponentOperation(updateTask, postStateTask);
                         break;
                     case RootComponentOperationType.Remove:
                         webRootComponentManager.RemoveRootComponent(operation.SsrComponentId);
@@ -931,6 +951,29 @@ internal partial class CircuitHost : IAsyncDisposable
         {
             await Task.WhenAll(pendingTasks);
         }
+    }
+
+    private async Task ObserveRootComponentOperation(Task task, Task postStateTask)
+    {
+        try
+        {
+            await task;
+        }
+        catch (Exception ex)
+        {
+            // A failed restore is reported by UpdateRootComponents, not once per dependent operation.
+            if (!postStateTask.IsFaulted && !postStateTask.IsCanceled)
+            {
+                await ReportRootComponentUpdateFailureAsync(ex);
+            }
+        }
+    }
+
+    private async Task ReportRootComponentUpdateFailureAsync(Exception exception)
+    {
+        Log.UpdateRootComponentsFailed(_logger, exception);
+        UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(exception, isTerminating: false));
+        await TryNotifyClientErrorAsync(Client, GetClientErrorMessage(exception), exception);
     }
 
     internal void AttachPersistedState(ResumedPersistedCircuitState persistedCircuitState)
